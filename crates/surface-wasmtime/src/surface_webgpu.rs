@@ -178,7 +178,8 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
     }
 
     fn drop(&mut self, surface: Resource<surface_webgpu::Context>) -> wasmtime::Result<()> {
-        self.table.delete(surface)?;
+        let context = self.table.delete(surface)?;
+        self.instance.surface_drop(context.surface_id);
         Ok(())
     }
 }
