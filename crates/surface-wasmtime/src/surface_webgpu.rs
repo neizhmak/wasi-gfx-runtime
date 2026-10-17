@@ -113,7 +113,15 @@ impl<'a, S: MainThreadSpawner> surface_webgpu::HostContext for SurfaceWebgpuCtx<
                 format: configuration.format.into(),
                 usage: configuration.usage.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuTextureUsage::RENDER_ATTACHMENT).try_into().unwrap(),
                 view_formats: configuration.view_formats.into_iter().flatten().map(|f| f.into()).collect(),
-                alpha_mode: configuration.alpha_mode.unwrap_or(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuCanvasAlphaMode::Opaque).into(),
+                alpha_mode: match configuration.alpha_mode {
+                    Some(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuCanvasAlphaMode::Opaque) => {
+                        wgpu_types::CompositeAlphaMode::Auto
+                    }
+                    Some(wasi_webgpu_wasmtime::wasi::webgpu::webgpu::GpuCanvasAlphaMode::Premultiplied) => {
+                        wgpu_types::CompositeAlphaMode::PreMultiplied
+                    }
+                    None => wgpu_types::CompositeAlphaMode::Auto,
+                },
                 // not present in WebGPU
                 width: context.surface.width(),
                 height: context.surface.height(),
