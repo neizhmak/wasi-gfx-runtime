@@ -45,7 +45,7 @@ impl Surface {
         let (mut pointer_down_sender, pointer_down_receiver) = async_broadcast::broadcast(5);
         let pointer_down_receiver = pointer_down_receiver.deactivate();
         pointer_down_sender.set_overflow(true);
-        let (mut pointer_move_sender, pointer_move_receiver) = async_broadcast::broadcast(1);
+        let (mut pointer_move_sender, pointer_move_receiver) = async_broadcast::broadcast(64);
         let pointer_move_receiver = pointer_move_receiver.deactivate();
         pointer_move_sender.set_overflow(true);
         let (mut key_up_sender, key_up_receiver) = async_broadcast::broadcast(5);
