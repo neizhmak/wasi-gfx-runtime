@@ -62,7 +62,7 @@ impl Surface {
         let (mut frame_sender, frame_receiver) = async_broadcast::broadcast(1);
         let frame_receiver = frame_receiver.deactivate();
         frame_sender.set_overflow(true);
-        let (mut event_sender, event_receiver) = async_broadcast::broadcast(4096);
+        let (mut event_sender, event_receiver) = async_broadcast::broadcast(128);
         let event_receiver = event_receiver.deactivate();
         event_sender.set_overflow(true);
         Surface(Arc::new(SurfaceInner {
