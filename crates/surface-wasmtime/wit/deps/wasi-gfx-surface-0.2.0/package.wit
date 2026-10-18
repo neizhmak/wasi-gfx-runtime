@@ -6,18 +6,34 @@ interface surface {
     width: option<u32>,
   }
 
-  resource surface {
-    constructor(desc: create-desc);
-    height: func() -> u32;
-    width: func() -> u32;
-    request-set-size: func(height: option<u32>, width: option<u32>);
-    on-resize: func() -> stream<resize-event>;
-    on-frame: func() -> stream<frame-event>;
-    on-pointer-up: func() -> stream<pointer-event>;
-    on-pointer-down: func() -> stream<pointer-event>;
-    on-pointer-move: func() -> stream<pointer-event>;
-    on-key-up: func() -> stream<key-event>;
-    on-key-down: func() -> stream<key-event>;
+  enum contact-phase {
+    start,
+    move,
+    end,
+    cancel,
+  }
+
+  record pointer-event {
+    pointer-id: u32,
+    is-direct: bool,
+    phase: contact-phase,
+    x: f64,
+    y: f64,
+    button: option<u32>,
+    buttons: u64,
+    pressure: option<f32>,
+  }
+
+  record scroll-event {
+    dx: f64,
+    dy: f64,
+  }
+
+  record key-event {
+    key-code: u32,
+    key: option<key>,
+    pressed: bool,
+    modifiers: u8,
   }
 
   record resize-event {
@@ -26,22 +42,30 @@ interface surface {
   }
 
   record frame-event {
-    /// TODO: This field doesn't mean anything.
-    /// Can't have empty record. Would like to have a way around this.
     nothing: bool,
   }
 
-  enum pointer-button {
-    primary,
-    secondary,
-    auxiliary,
-    other,
+  variant event {
+    pointer(pointer-event),
+    scroll(scroll-event),
+    key(key-event),
+    text(string),
+    resize(resize-event),
   }
 
-  record pointer-event {
-    x: f64,
-    y: f64,
-    button: option<pointer-button>,
+  resource surface {
+    constructor(desc: create-desc);
+    height: func() -> u32;
+    width: func() -> u32;
+    request-set-size: func(height: option<u32>, width: option<u32>);
+    events: func() -> stream<event>;
+    on-resize: func() -> stream<resize-event>;
+    on-frame: func() -> stream<frame-event>;
+    on-pointer-up: func() -> stream<pointer-event>;
+    on-pointer-down: func() -> stream<pointer-event>;
+    on-pointer-move: func() -> stream<pointer-event>;
+    on-key-up: func() -> stream<key-event>;
+    on-key-down: func() -> stream<key-event>;
   }
 
   /// corresponds with https://w3c.github.io/uievents-code/#code-value-tables
@@ -219,15 +243,6 @@ interface surface {
     hiragana,
     katakana,
   }
-
-  record key-event {
-    key: option<key>,
-    text: option<string>,
-    alt-key: bool,
-    ctrl-key: bool,
-    meta-key: bool,
-    shift-key: bool,
-  }
 }
 
 interface surface-frame-buffer {
@@ -237,7 +252,6 @@ interface surface-frame-buffer {
   resource context {
     constructor(surface: borrow<surface>);
     get-current-buffer: func() -> buffer;
-    /// TODO: consider if needed
     present: func();
   }
 }
@@ -261,7 +275,6 @@ interface surface-webgpu {
     configure: func(configuration: context-configuration);
     unconfigure: func();
     get-current-texture: func() -> gpu-texture;
-    /// TODO: consider if needed
     present: func();
   }
 }

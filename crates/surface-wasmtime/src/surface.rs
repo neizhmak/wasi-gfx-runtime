@@ -3,7 +3,8 @@ use shared::channel_to_stream;
 use std::{fmt::Debug, future::Future, marker::PhantomData, pin::Pin, sync::Arc};
 use wasi_gfx::surface::surface;
 pub use wasi_gfx::surface::surface::{
-    FrameEvent, Key, KeyEvent, PointerButton, PointerEvent, {CreateDesc as SurfaceDesc, ResizeEvent},
+    ContactPhase, Event, FrameEvent, Key, KeyEvent, PointerEvent, ResizeEvent, ScrollEvent,
+    {CreateDesc as SurfaceDesc},
 };
 use wasmtime::component::{Access, HasData, Resource, StreamReader};
 
@@ -11,6 +12,7 @@ wasmtime::component::bindgen!({
     world: "wasi-gfx:surface/imports",
     require_store_data_send: true,
     imports: {
+        "wasi-gfx:surface/surface.[method]surface.events": store | trappable,
         "wasi-gfx:surface/surface.[method]surface.on-pointer-down": store | trappable,
         "wasi-gfx:surface/surface.[method]surface.on-pointer-move": store | trappable,
         "wasi-gfx:surface/surface.[method]surface.on-key-up": store | trappable,
@@ -60,8 +62,13 @@ impl Surface {
         let (mut frame_sender, frame_receiver) = async_broadcast::broadcast(1);
         let frame_receiver = frame_receiver.deactivate();
         frame_sender.set_overflow(true);
+        let (mut event_sender, event_receiver) = async_broadcast::broadcast(256);
+        let event_receiver = event_receiver.deactivate();
+        event_sender.set_overflow(true);
         Surface(Arc::new(SurfaceInner {
             window,
+            event_sender,
+            _event_receiver: event_receiver,
             pointer_up_sender,
             _pointer_up_receiver: pointer_up_receiver,
             pointer_down_sender,
@@ -113,6 +120,7 @@ impl Surface {
     }
     pub fn canvas_resize(&self, event: ResizeEvent) {
         shared::unwrap_unless_inactive(self.0.resize_sender.try_broadcast(event));
+        self.emit_event(Event::Resize(event));
     }
     pub fn animation_frame(&self) {
         shared::unwrap_unless_inactive_or_full(
@@ -120,6 +128,21 @@ impl Surface {
                 .frame_sender
                 .try_broadcast(FrameEvent { nothing: true }),
         );
+    }
+    pub fn emit_event(&self, event: Event) {
+        shared::unwrap_unless_inactive_or_full(self.0.event_sender.try_broadcast(event));
+    }
+    pub fn pointer_event(&self, pe: PointerEvent) {
+        self.emit_event(Event::Pointer(pe));
+    }
+    pub fn scroll_event(&self, se: ScrollEvent) {
+        self.emit_event(Event::Scroll(se));
+    }
+    pub fn key_event(&self, ke: KeyEvent) {
+        self.emit_event(Event::Key(ke));
+    }
+    pub fn text_event(&self, text: String) {
+        self.emit_event(Event::Text(text));
     }
 }
 
@@ -140,6 +163,10 @@ impl HasWindowHandle for Surface {
 
 struct SurfaceInner {
     pub window: Box<dyn GfxWindow + Send + Sync + 'static>,
+
+    // Unified event stream sender
+    event_sender: async_broadcast::Sender<Event>,
+    _event_receiver: async_broadcast::InactiveReceiver<Event>,
 
     // Keeping inactive receivers to keep channels open.
     // See https://docs.rs/async-broadcast/0.7.1/async_broadcast/struct.InactiveReceiver.html
@@ -259,6 +286,15 @@ impl<'a, S: MainThreadSpawner> surface::HostSurface for SurfaceCtx<'a, S> {
 }
 
 impl<T, S: MainThreadSpawner> surface::HostSurfaceWithStore<T> for HasSurfaceCtx<S> {
+    fn events(
+        mut access: Access<T, Self>,
+        surface: Resource<surface::Surface>,
+    ) -> wasmtime::Result<StreamReader<Event>> {
+        let ctx = access.get();
+        let surface = ctx.table.get(&surface)?;
+        let receiver = surface.0.event_sender.new_receiver();
+        Ok(channel_to_stream(access, receiver))
+    }
     fn on_pointer_down(
         mut access: Access<T, Self>,
         surface: Resource<surface::Surface>,

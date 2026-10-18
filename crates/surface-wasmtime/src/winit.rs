@@ -10,7 +10,8 @@ use std::{
 };
 
 use crate::surface::{
-    wasi_gfx, KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent, SurfaceDesc,
+    wasi_gfx, ContactPhase, Event, KeyEvent, MainThreadSpawner, PointerEvent, ResizeEvent,
+    ScrollEvent, SurfaceDesc,
 };
 use crate::surface::{GfxWindow, Surface};
 use raw_window_handle::{
@@ -143,11 +144,18 @@ impl WasiWinitEventLoop {
                             .insert(window_id, (position.x, position.y))
                             .unwrap();
                         if let Some(proxy) = self.surfaces.get(&window_id) {
-                            proxy.pointer_move(PointerEvent {
+                            let event = PointerEvent {
+                                pointer_id: 0,
+                                is_direct: false,
+                                phase: ContactPhase::Move,
                                 x: position.x,
                                 y: position.y,
                                 button: None,
-                            });
+                                buttons: 0,
+                                pressure: None,
+                            };
+                            proxy.pointer_move(event.clone());
+                            proxy.emit_event(Event::Pointer(event));
                         }
                     }
                     WindowEvent::ModifiersChanged(modifiers) => {
@@ -155,54 +163,84 @@ impl WasiWinitEventLoop {
                     }
                     WindowEvent::KeyboardInput { event: input, .. } => {
                         let modifiers = self.modifiers.get(&window_id).unwrap();
+                        let (key_code, key) = match input.physical_key {
+                            winit::keyboard::PhysicalKey::Code(code) => (code as u32, code.try_into().ok()),
+                            winit::keyboard::PhysicalKey::Unidentified(_) => (0, None),
+                        };
+                        let mut modifiers_mask = 0u8;
+                        if modifiers.shift_key() { modifiers_mask |= 1; }
+                        if modifiers.control_key() { modifiers_mask |= 2; }
+                        if modifiers.alt_key() { modifiers_mask |= 4; }
+                        if modifiers.super_key() { modifiers_mask |= 8; }
                         let event = KeyEvent {
-                            key: match input.physical_key {
-                                winit::keyboard::PhysicalKey::Code(code) => code.try_into().ok(),
-                                winit::keyboard::PhysicalKey::Unidentified(_) => None,
-                            },
-                            text: match input.logical_key {
-                                winit::keyboard::Key::Character(char) => Some(char.to_string()),
-                                winit::keyboard::Key::Named(_)
-                                | winit::keyboard::Key::Unidentified(_)
-                                | winit::keyboard::Key::Dead(_) => None,
-                            },
-                            alt_key: modifiers.alt_key(),
-                            ctrl_key: modifiers.control_key(),
-                            meta_key: modifiers.super_key(),
-                            shift_key: modifiers.shift_key(),
+                            key_code,
+                            key,
+                            pressed: input.state == ElementState::Pressed,
+                            modifiers: modifiers_mask,
                         };
                         if let Some(proxy) = self.surfaces.get(&window_id) {
                             match input.state {
                                 ElementState::Pressed => {
-                                    proxy.key_down(event);
+                                    proxy.key_down(event.clone());
                                 }
                                 ElementState::Released => {
-                                    proxy.key_up(event);
+                                    proxy.key_up(event.clone());
+                                }
+                            }
+                            proxy.key_event(event);
+                            if input.state == ElementState::Pressed {
+                                if let winit::keyboard::Key::Character(ref c) = input.logical_key {
+                                    proxy.text_event(c.to_string());
                                 }
                             }
                         }
                     }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        let (dx, dy) = match delta {
+                            winit::event::MouseScrollDelta::LineDelta(x, y) => (x as f64 * 20.0, y as f64 * 20.0),
+                            winit::event::MouseScrollDelta::PixelDelta(pos) => (pos.x, pos.y),
+                        };
+                        if let Some(proxy) = self.surfaces.get(&window_id) {
+                            proxy.scroll_event(ScrollEvent { dx, dy });
+                        }
+                    }
                     WindowEvent::MouseInput { state, button, .. } => {
                         let (pointer_x, pointer_y) = self.pointer_pos.get(&window_id).unwrap();
+                        let button_idx = match button {
+                            winit::event::MouseButton::Left => 0,
+                            winit::event::MouseButton::Right => 1,
+                            winit::event::MouseButton::Middle => 2,
+                            winit::event::MouseButton::Back => 3,
+                            winit::event::MouseButton::Forward => 4,
+                            winit::event::MouseButton::Other(n) => n as u32,
+                        };
+                        let phase = match state {
+                            ElementState::Pressed => ContactPhase::Start,
+                            ElementState::Released => ContactPhase::End,
+                        };
                         let event = PointerEvent {
+                            pointer_id: 0,
+                            is_direct: false,
+                            phase,
                             x: *pointer_x,
                             y: *pointer_y,
-                            button: match button {
-                                winit::event::MouseButton::Left => Some(crate::surface::PointerButton::Primary),
-                                winit::event::MouseButton::Right => Some(crate::surface::PointerButton::Secondary),
-                                winit::event::MouseButton::Middle => Some(crate::surface::PointerButton::Auxiliary),
-                                _ => Some(crate::surface::PointerButton::Other),
+                            button: Some(button_idx),
+                            buttons: match state {
+                                ElementState::Pressed => 1 << button_idx,
+                                ElementState::Released => 0,
                             },
+                            pressure: None,
                         };
                         if let Some(proxy) = self.surfaces.get(&window_id) {
                             match state {
                                 ElementState::Pressed => {
-                                    proxy.pointer_down(event);
+                                    proxy.pointer_down(event.clone());
                                 }
                                 ElementState::Released => {
-                                    proxy.pointer_up(event);
+                                    proxy.pointer_up(event.clone());
                                 }
                             }
+                            proxy.emit_event(Event::Pointer(event));
                         }
                     }
                     WindowEvent::Resized(new_size) => {
