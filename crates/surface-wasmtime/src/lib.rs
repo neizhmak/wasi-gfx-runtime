@@ -1,7 +1,7 @@
 mod surface;
 pub use surface::{
     add_to_linker as add_surface_to_linker, GfxWindow, Key, KeyEvent, MainThreadSpawner,
-    PointerEvent, ResizeEvent, Surface, SurfaceCtx, SurfaceCtxView, SurfaceDesc,
+    PointerButton, PointerEvent, ResizeEvent, Surface, SurfaceCtx, SurfaceCtxView, SurfaceDesc,
 };
 
 #[cfg(feature = "winit")]

@@ -31,9 +31,17 @@ interface surface {
     nothing: bool,
   }
 
+  enum pointer-button {
+    primary,
+    secondary,
+    auxiliary,
+    other,
+  }
+
   record pointer-event {
     x: f64,
     y: f64,
+    button: option<pointer-button>,
   }
 
   /// corresponds with https://w3c.github.io/uievents-code/#code-value-tables

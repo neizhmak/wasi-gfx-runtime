@@ -146,6 +146,7 @@ impl WasiWinitEventLoop {
                             proxy.pointer_move(PointerEvent {
                                 x: position.x,
                                 y: position.y,
+                                button: None,
                             });
                         }
                     }
@@ -181,11 +182,17 @@ impl WasiWinitEventLoop {
                             }
                         }
                     }
-                    WindowEvent::MouseInput { state, .. } => {
+                    WindowEvent::MouseInput { state, button, .. } => {
                         let (pointer_x, pointer_y) = self.pointer_pos.get(&window_id).unwrap();
                         let event = PointerEvent {
                             x: *pointer_x,
                             y: *pointer_y,
+                            button: match button {
+                                winit::event::MouseButton::Left => Some(crate::surface::PointerButton::Primary),
+                                winit::event::MouseButton::Right => Some(crate::surface::PointerButton::Secondary),
+                                winit::event::MouseButton::Middle => Some(crate::surface::PointerButton::Auxiliary),
+                                _ => Some(crate::surface::PointerButton::Other),
+                            },
                         };
                         if let Some(proxy) = self.surfaces.get(&window_id) {
                             match state {
