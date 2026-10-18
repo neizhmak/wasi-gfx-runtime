@@ -66,6 +66,8 @@ interface surface {
     on-pointer-move: func() -> stream<pointer-event>;
     on-key-up: func() -> stream<key-event>;
     on-key-down: func() -> stream<key-event>;
+    on-scroll: func() -> stream<scroll-event>;
+    on-text: func() -> stream<string>;
   }
 
   /// corresponds with https://w3c.github.io/uievents-code/#code-value-tables

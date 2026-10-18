@@ -20,6 +20,8 @@ wasmtime::component::bindgen!({
         "wasi-gfx:surface/surface.[method]surface.on-key-down": store | trappable,
         "wasi-gfx:surface/surface.[method]surface.on-resize": store | trappable,
         "wasi-gfx:surface/surface.[method]surface.on-frame": store | trappable,
+        "wasi-gfx:surface/surface.[method]surface.on-scroll": store | trappable,
+        "wasi-gfx:surface/surface.[method]surface.on-text": store | trappable,
         default: trappable,
     },
     with: {
@@ -62,6 +64,12 @@ impl Surface {
         let (mut frame_sender, frame_receiver) = async_broadcast::broadcast(1);
         let frame_receiver = frame_receiver.deactivate();
         frame_sender.set_overflow(true);
+        let (mut scroll_sender, scroll_receiver) = async_broadcast::broadcast(32);
+        let scroll_receiver = scroll_receiver.deactivate();
+        scroll_sender.set_overflow(true);
+        let (mut text_sender, text_receiver) = async_broadcast::broadcast(32);
+        let text_receiver = text_receiver.deactivate();
+        text_sender.set_overflow(true);
         let (mut event_sender, event_receiver) = async_broadcast::broadcast(128);
         let event_receiver = event_receiver.deactivate();
         event_sender.set_overflow(true);
@@ -79,6 +87,10 @@ impl Surface {
             _key_up_receiver: key_up_receiver,
             key_down_sender,
             _key_down_receiver: key_down_receiver,
+            scroll_sender,
+            _scroll_receiver: scroll_receiver,
+            text_sender,
+            _text_receiver: text_receiver,
             resize_sender,
             _resize_receiver: resize_receiver,
             frame_sender,
@@ -135,14 +147,22 @@ impl Surface {
     pub fn pointer_event(&self, pe: PointerEvent) {
         self.emit_event(Event::Pointer(pe));
     }
-    pub fn scroll_event(&self, se: ScrollEvent) {
+    pub fn scroll(&self, se: ScrollEvent) {
+        shared::unwrap_unless_inactive_or_full(self.0.scroll_sender.try_broadcast(se));
         self.emit_event(Event::Scroll(se));
+    }
+    pub fn scroll_event(&self, se: ScrollEvent) {
+        self.scroll(se);
+    }
+    pub fn text(&self, text: String) {
+        shared::unwrap_unless_inactive_or_full(self.0.text_sender.try_broadcast(text.clone()));
+        self.emit_event(Event::Text(text));
+    }
+    pub fn text_event(&self, text: String) {
+        self.text(text);
     }
     pub fn key_event(&self, ke: KeyEvent) {
         self.emit_event(Event::Key(ke));
-    }
-    pub fn text_event(&self, text: String) {
-        self.emit_event(Event::Text(text));
     }
 }
 
@@ -180,6 +200,10 @@ struct SurfaceInner {
     _key_up_receiver: async_broadcast::InactiveReceiver<KeyEvent>,
     key_down_sender: async_broadcast::Sender<KeyEvent>,
     _key_down_receiver: async_broadcast::InactiveReceiver<KeyEvent>,
+    scroll_sender: async_broadcast::Sender<ScrollEvent>,
+    _scroll_receiver: async_broadcast::InactiveReceiver<ScrollEvent>,
+    text_sender: async_broadcast::Sender<String>,
+    _text_receiver: async_broadcast::InactiveReceiver<String>,
     resize_sender: async_broadcast::Sender<ResizeEvent>,
     _resize_receiver: async_broadcast::InactiveReceiver<ResizeEvent>,
     frame_sender: async_broadcast::Sender<FrameEvent>,
@@ -362,6 +386,26 @@ impl<T, S: MainThreadSpawner> surface::HostSurfaceWithStore<T> for HasSurfaceCtx
         let ctx = access.get();
         let surface = ctx.table.get(&surface)?;
         let receiver = surface.0.frame_sender.new_receiver();
+        Ok(channel_to_stream(access, receiver))
+    }
+
+    fn on_scroll(
+        mut access: Access<T, Self>,
+        surface: Resource<surface::Surface>,
+    ) -> wasmtime::Result<StreamReader<ScrollEvent>> {
+        let ctx = access.get();
+        let surface = ctx.table.get(&surface)?;
+        let receiver = surface.0.scroll_sender.new_receiver();
+        Ok(channel_to_stream(access, receiver))
+    }
+
+    fn on_text(
+        mut access: Access<T, Self>,
+        surface: Resource<surface::Surface>,
+    ) -> wasmtime::Result<StreamReader<String>> {
+        let ctx = access.get();
+        let surface = ctx.table.get(&surface)?;
+        let receiver = surface.0.text_sender.new_receiver();
         Ok(channel_to_stream(access, receiver))
     }
 }
